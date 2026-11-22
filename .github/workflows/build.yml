@@ -1,4 +1,4 @@
-name: Compilar Mod Agua Realista 1.20.1
+name: Compilar Mod Agua Realista v2.0 (1.20.1)
 
 on:
   push:
@@ -19,7 +19,92 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Gerar arquivos do mod automaticamente
+      - name: Gerar texturas cristalinas de agua (sem pixels feios)
+        run: |
+          python3 - << 'END_PY'
+          import math, os, struct, zlib
+
+          os.makedirs('src/main/resources/assets/minecraft/textures/block', exist_ok=True)
+
+          def write_png(path, width, height, rgba):
+              def chunk(tag, data):
+                  return struct.pack('>I', len(data)) + tag + data + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff)
+              raw = bytearray()
+              stride = width * 4
+              for y in range(height):
+                  raw.append(0)
+                  raw.extend(rgba[y * stride:(y + 1) * stride])
+              ihdr = struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)
+              idat = zlib.compress(bytes(raw), 6)
+              with open(path, 'wb') as f:
+                  f.write(b'\x89PNG\r\n\x1a\n')
+                  f.write(chunk(b'IHDR', ihdr))
+                  f.write(chunk(b'IDAT', idat))
+                  f.write(chunk(b'IEND', b''))
+
+          # water_still.png: 32x32 x 16 frames (agua lisa, cristalina e sem quadrados)
+          w, frames = 32, 16
+          buf = bytearray(w * w * frames * 4)
+          for fr in range(frames):
+              t = (fr / frames) * math.tau
+              for y in range(w):
+                  ny = (y / w) * math.tau
+                  for x in range(w):
+                      nx = (x / w) * math.tau
+                      v1 = math.sin(nx + t) * math.cos(ny - t)
+                      v2 = math.sin(nx * 2.0 - ny + t * 2.0) * 0.5
+                      v3 = math.cos(nx + ny * 2.0 - t) * 0.35
+                      val = (v1 + v2 + v3) / 1.85
+                      bright = int(max(195, min(255, 228 + val * 26)))
+                      alpha = int(max(42, min(105, 68 + val * 20)))
+                      idx = ((fr * w + y) * w + x) * 4
+                      buf[idx] = bright
+                      buf[idx + 1] = bright
+                      buf[idx + 2] = 255
+                      buf[idx + 3] = alpha
+          write_png('src/main/resources/assets/minecraft/textures/block/water_still.png', w, w * frames, buf)
+
+          # water_flow.png: 64x64 x 16 frames (correnteza lisa e suave)
+          w, frames = 64, 16
+          buf = bytearray(w * w * frames * 4)
+          for fr in range(frames):
+              t = (fr / frames) * math.tau
+              for y in range(w):
+                  ny = (y / w) * math.tau
+                  for x in range(w):
+                      nx = (x / w) * math.tau
+                      v1 = math.sin(nx * 2.0 + math.sin(ny - t) * 0.8)
+                      v2 = math.cos(ny * 2.0 - t * 2.0 + math.cos(nx) * 0.6) * 0.6
+                      val = (v1 + v2) / 1.6
+                      bright = int(max(200, min(255, 232 + val * 22)))
+                      alpha = int(max(55, min(125, 86 + val * 22)))
+                      idx = ((fr * w + y) * w + x) * 4
+                      buf[idx] = bright
+                      buf[idx + 1] = bright
+                      buf[idx + 2] = 255
+                      buf[idx + 3] = alpha
+          write_png('src/main/resources/assets/minecraft/textures/block/water_flow.png', w, w * frames, buf)
+          END_PY
+
+          cat << 'END_MCMETA1' > src/main/resources/assets/minecraft/textures/block/water_still.png.mcmeta
+          {
+            "animation": {
+              "frametime": 2,
+              "interpolate": true
+            }
+          }
+          END_MCMETA1
+
+          cat << 'END_MCMETA2' > src/main/resources/assets/minecraft/textures/block/water_flow.png.mcmeta
+          {
+            "animation": {
+              "frametime": 2,
+              "interpolate": true
+            }
+          }
+          END_MCMETA2
+
+      - name: Gerar codigo Java do mod v2.0
         run: |
           mkdir -p src/main/resources/META-INF src/main/java/com/aguarealista/client
 
@@ -47,11 +132,11 @@ jobs:
               id 'net.minecraftforge.gradle' version '[6.0,6.2)'
           }
 
-          version = '1.0.0'
+          version = '2.0.0'
           group = 'com.aguarealista'
 
           base {
-              archivesName = 'aguarealista-1.20.1'
+              archivesName = 'aguarealista-v2-1.20.1'
           }
 
           java.toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -73,7 +158,7 @@ jobs:
                   attributes([
                           "Specification-Title"     : "aguarealista",
                           "Specification-Vendor"    : "AguaRealista",
-                          "Specification-Version"   : "1",
+                          "Specification-Version"   : "2",
                           "Implementation-Title"    : project.name,
                           "Implementation-Version"  : project.version,
                           "Implementation-Vendor"   : "AguaRealista"
@@ -86,7 +171,7 @@ jobs:
           cat << 'END_META' > src/main/resources/pack.mcmeta
           {
             "pack": {
-              "description": "Agua Realista resources",
+              "description": "Agua Realista v2 Ultra Resources",
               "pack_format": 15
             }
           }
@@ -99,10 +184,10 @@ jobs:
 
           [[mods]]
           modId="aguarealista"
-          version="1.0.0"
-          displayName="Agua Realista"
+          version="2.0.0"
+          displayName="Agua Realista Ultra v2"
           description='''
-          Agua realista sem shaders com ondas 3D dinamicas, espuma nas bordas, reflexos simulados e fisica de movimento.
+          Simulacao fisica real de ondas 2D/3D em alta resolucao, reflexo Fresnel do ceu e sol, profundidade real, causticas subaquaticas e espuma dinamica sem shaders.
           '''
 
           [[dependencies.aguarealista]]
@@ -168,11 +253,11 @@ jobs:
                   double horizSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
                   double vertSpeed = Math.abs(motion.y);
 
-                  if (horizSpeed < 0.06 && vertSpeed < 0.14) {
+                  if (horizSpeed < 0.05 && vertSpeed < 0.12) {
                       return;
                   }
 
-                  AABB area = player.getBoundingBox().inflate(3.5, 1.5, 3.5);
+                  AABB area = player.getBoundingBox().inflate(4.5, 2.0, 4.5);
                   for (Entity target : level.getEntities(player, area)) {
                       if (!target.isInWater()) {
                           continue;
@@ -185,39 +270,41 @@ jobs:
                       double dz = target.getZ() - player.getZ();
                       double dist = Math.sqrt(dx * dx + dz * dz);
 
-                      if (dist > 0.15 && dist < 3.5) {
-                          double falloff = 1.0 - (dist / 3.5);
-                          double force = falloff * Math.min(0.085, horizSpeed * 0.22 + vertSpeed * 0.16);
+                      if (dist > 0.12 && dist < 4.5) {
+                          double falloff = 1.0 - (dist / 4.5);
+                          double force = falloff * Math.min(0.12, horizSpeed * 0.28 + vertSpeed * 0.22);
                           if (target instanceof ItemEntity) {
-                              force *= 1.8;
+                              force *= 2.0;
                           } else if (target instanceof Boat) {
-                              force *= 0.8;
+                              force *= 0.85;
                           }
 
-                          target.push((dx / dist) * force, 0.008 * force, (dz / dist) * force);
+                          target.push((dx / dist) * force, 0.012 * force, (dz / dist) * force);
                       }
                   }
               }
           }
           END_PHYSICS
 
-          cat << 'END_MANAGER' > src/main/java/com/aguarealista/client/WaterWaveManager.java
+          cat << 'END_SIM' > src/main/java/com/aguarealista/client/WaterSimulation.java
           package com.aguarealista.client;
 
           import com.aguarealista.AguaRealistaMod;
           import net.minecraft.client.Minecraft;
           import net.minecraft.client.multiplayer.ClientLevel;
+          import net.minecraft.client.renderer.BiomeColors;
           import net.minecraft.core.BlockPos;
           import net.minecraft.core.particles.ParticleTypes;
           import net.minecraft.sounds.SoundEvents;
           import net.minecraft.sounds.SoundSource;
           import net.minecraft.tags.FluidTags;
+          import net.minecraft.util.Mth;
           import net.minecraft.world.entity.Entity;
           import net.minecraft.world.entity.LivingEntity;
           import net.minecraft.world.entity.item.ItemEntity;
           import net.minecraft.world.entity.player.Player;
           import net.minecraft.world.entity.vehicle.Boat;
-          import net.minecraft.world.level.Level;
+          import net.minecraft.world.level.LightLayer;
           import net.minecraft.world.level.block.state.BlockState;
           import net.minecraft.world.level.material.FluidState;
           import net.minecraft.world.phys.AABB;
@@ -226,157 +313,108 @@ jobs:
           import net.minecraftforge.eventbus.api.SubscribeEvent;
           import net.minecraftforge.fml.common.Mod;
 
-          import java.util.ArrayList;
+          import java.util.Arrays;
           import java.util.HashMap;
-          import java.util.Iterator;
           import java.util.List;
           import java.util.Map;
           import java.util.Random;
 
           @Mod.EventBusSubscriber(modid = AguaRealistaMod.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
-          public class WaterWaveManager {
+          public class WaterSimulation {
 
-              public static final int MAX_WAVES = 90;
-              private static final int SURFACE_SCAN_RADIUS = 13;
+              public static final int BLOCK_RADIUS = 14;
+              public static final int GRID_BLOCKS = BLOCK_RADIUS * 2 + 1; // 29x29 blocos
+              public static final int SUB = 3; // 3x3 subdivisoes por bloco (alta resolucao!)
+              public static final float STEP = 1.0f / SUB;
+              public static final int N = GRID_BLOCKS * SUB + 1; // 88x88 vertices
 
-              private static final List<Wave> WAVES = new ArrayList<>();
-              private static final List<WaterCell> WATER_CELLS = new ArrayList<>();
+              public static class WaterColumn {
+                  public boolean hasWater;
+                  public int worldX;
+                  public int worldY;
+                  public int worldZ;
+                  public float surfaceY;
+                  public int depth;
+                  public int floorY;
+                  public int shoreMask;
+                  public float openness;
+                  public boolean skyVisible;
+                  public float skyLight;
+                  public float blockLight;
+                  public float biomeR;
+                  public float biomeG;
+                  public float biomeB;
+              }
+
+              public static final WaterColumn[] COLUMNS = new WaterColumn[GRID_BLOCKS * GRID_BLOCKS];
+              public static final float[] curr = new float[N * N];
+              public static final float[] prev = new float[N * N];
+              public static final float[] next = new float[N * N];
+              public static final float[] renderPrev = new float[N * N];
+
+              public static final float[] foam = new float[N * N];
+              public static final float[] foamPrev = new float[N * N];
+
+              public static final boolean[] isWaterNode = new boolean[N * N];
+              public static final boolean[] isBoundaryNode = new boolean[N * N];
+
+              private static final float[] tmpA = new float[N * N];
+              private static final float[] tmpB = new float[N * N];
+              private static final float[] tmpC = new float[N * N];
+
               private static final Map<Integer, Boolean> WAS_IN_WATER = new HashMap<>();
               private static final Random RANDOM = new Random();
 
+              public static int originBlockX = 0;
+              public static int originBlockZ = 0;
+              public static boolean initialized = false;
+              public static boolean hasAnyWater = false;
               private static int tickCounter = 0;
 
-              public static class Wave {
-                  public final double x;
-                  public final double y;
-                  public final double z;
-                  public final float maxRadius;
-                  public final float speed;
-                  public final float strength;
-                  public final boolean foamRing;
-                  public float radius;
-                  public float prevRadius;
-                  public int age;
-                  public final int maxAge;
-
-                  public Wave(double x, double y, double z, float maxRadius, float speed, float strength, boolean foamRing) {
-                      this.x = x;
-                      this.y = y;
-                      this.z = z;
-                      this.maxRadius = maxRadius;
-                      this.speed = speed;
-                      this.strength = strength;
-                      this.foamRing = foamRing;
-                      this.radius = 0.12f;
-                      this.prevRadius = 0.12f;
-                      this.age = 0;
-                      this.maxAge = Math.max(12, (int) (maxRadius / speed));
-                  }
-
-                  public void tick() {
-                      this.prevRadius = this.radius;
-                      this.radius += this.speed;
-                      this.age++;
-                  }
-
-                  public float getInterpolatedRadius(float partialTick) {
-                      return this.prevRadius + (this.radius - this.prevRadius) * partialTick;
-                  }
-
-                  public float getProgress(float partialTick) {
-                      return Math.min(1.0f, (this.age + partialTick) / (float) this.maxAge);
-                  }
-
-                  public boolean isExpired() {
-                      return this.age >= this.maxAge || this.radius >= this.maxRadius;
+              static {
+                  for (int i = 0; i < COLUMNS.length; i++) {
+                      COLUMNS[i] = new WaterColumn();
                   }
               }
 
-              public static class WaterCell {
-                  public final int x;
-                  public final int y;
-                  public final int z;
-                  public final float surfaceY;
-                  public final int shoreMask;
-                  public final boolean skyVisible;
-
-                  public WaterCell(int x, int y, int z, float surfaceY, int shoreMask, boolean skyVisible) {
-                      this.x = x;
-                      this.y = y;
-                      this.z = z;
-                      this.surfaceY = surfaceY;
-                      this.shoreMask = shoreMask;
-                      this.skyVisible = skyVisible;
-                  }
+              public static int colIdx(int bx, int bz) {
+                  return bz * GRID_BLOCKS + bx;
               }
 
-              public static List<Wave> getWaves() {
-                  return WAVES;
+              public static int nodeIdx(int gx, int gz) {
+                  return gz * N + gx;
               }
 
-              public static List<WaterCell> getWaterCells() {
-                  return WATER_CELLS;
+              public static float getSimHeight(int gx, int gz, float partialTick) {
+                  int idx = nodeIdx(gx, gz);
+                  return Mth.lerp(partialTick, renderPrev[idx], curr[idx]);
               }
 
-              public static void addWave(double x, double y, double z, float maxRadius, float speed, float strength, boolean foamRing) {
-                  if (WAVES.size() >= MAX_WAVES) {
-                      WAVES.remove(0);
-                  }
-                  WAVES.add(new Wave(x, y, z, maxRadius, speed, strength, foamRing));
+              public static float getFoam(int gx, int gz, float partialTick) {
+                  int idx = nodeIdx(gx, gz);
+                  return Mth.lerp(partialTick, foamPrev[idx], foam[idx]);
               }
 
-              public static float getWaveDisplacementAt(double wx, double wz, float partialTick) {
-                  float total = 0.0f;
-                  for (int i = 0; i < WAVES.size(); i++) {
-                      Wave wave = WAVES.get(i);
-                      double dx = wx - wave.x;
-                      double dz = wz - wave.z;
-                      double distSq = dx * dx + dz * dz;
-                      float r = wave.getInterpolatedRadius(partialTick);
-                      float bandWidth = wave.foamRing ? 0.55f : 0.28f;
-
-                      if (distSq > (r + bandWidth) * (r + bandWidth)) {
-                          continue;
-                      }
-
-                      double dist = Math.sqrt(distSq);
-                      float diff = (float) Math.abs(dist - r);
-                      if (diff < bandWidth) {
-                          float progress = wave.getProgress(partialTick);
-                          float fade = (1.0f - progress) * (1.0f - progress);
-                          float bell = (float) Math.cos((diff / bandWidth) * (Math.PI * 0.5));
-                          total += bell * bell * wave.strength * 0.14f * fade;
-                      }
-                  }
-                  return Math.min(0.24f, total);
+              public static float getAmbientWave(double wx, double wz, float time) {
+                  double w1 = Math.sin(wx * 0.52 + wz * 0.28 + time * 1.15) * 0.024;
+                  double w2 = Math.cos(wx * 0.34 - wz * 0.68 + time * 0.92) * 0.020;
+                  double w3 = Math.sin(wx * 1.05 + wz * 0.85 - time * 1.55) * 0.011;
+                  double w4 = Math.cos(wx * 1.65 - wz * 1.45 + time * 2.10) * 0.006;
+                  return (float) (w1 + w2 + w3 + w4);
               }
 
-              public static boolean isWaterAt(Level level, double x, double surfaceY, double z) {
-                  BlockPos pos = BlockPos.containing(x, surfaceY - 0.25, z);
-                  if (level.getFluidState(pos).is(FluidTags.WATER)) {
-                      return true;
-                  }
-                  return level.getFluidState(pos.below()).is(FluidTags.WATER);
-              }
-
-              public static double findWaterSurfaceY(Level level, double x, double y, double z) {
-                  int bx = (int) Math.floor(x);
-                  int by = (int) Math.floor(y);
-                  int bz = (int) Math.floor(z);
-                  BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-                  BlockPos.MutableBlockPos above = new BlockPos.MutableBlockPos();
-
-                  for (int offset = 3; offset >= -2; offset--) {
-                      pos.set(bx, by + offset, bz);
-                      FluidState fluid = level.getFluidState(pos);
-                      if (fluid.is(FluidTags.WATER)) {
-                          above.set(bx, by + offset + 1, bz);
-                          if (!level.getFluidState(above).is(FluidTags.WATER)) {
-                              return pos.getY() + fluid.getHeight(level, pos);
-                          }
-                      }
-                  }
-                  return Double.NaN;
+              public static void reset() {
+                  Arrays.fill(curr, 0.0f);
+                  Arrays.fill(prev, 0.0f);
+                  Arrays.fill(next, 0.0f);
+                  Arrays.fill(renderPrev, 0.0f);
+                  Arrays.fill(foam, 0.0f);
+                  Arrays.fill(foamPrev, 0.0f);
+                  Arrays.fill(isWaterNode, false);
+                  Arrays.fill(isBoundaryNode, false);
+                  WAS_IN_WATER.clear();
+                  initialized = false;
+                  hasAnyWater = false;
               }
 
               @SubscribeEvent
@@ -387,12 +425,12 @@ jobs:
 
                   Minecraft mc = Minecraft.getInstance();
                   ClientLevel level = mc.level;
-                  Player localPlayer = mc.player;
+                  Player player = mc.player;
 
-                  if (level == null || localPlayer == null) {
-                      WAVES.clear();
-                      WATER_CELLS.clear();
-                      WAS_IN_WATER.clear();
+                  if (level == null || player == null) {
+                      if (initialized) {
+                          reset();
+                      }
                       return;
                   }
 
@@ -402,69 +440,214 @@ jobs:
 
                   tickCounter++;
 
-                  Iterator<Wave> it = WAVES.iterator();
-                  while (it.hasNext()) {
-                      Wave wave = it.next();
-                      wave.tick();
-                      if (wave.isExpired()) {
-                          it.remove();
-                      }
+                  int px = Mth.floor(player.getX());
+                  int pz = Mth.floor(player.getZ());
+
+                  if (!initialized || Math.abs(px - originBlockX) > BLOCK_RADIUS || Math.abs(pz - originBlockZ) > BLOCK_RADIUS) {
+                      reset();
+                      originBlockX = px;
+                      originBlockZ = pz;
+                      initialized = true;
+                      scanWaterWorld(level, player);
+                  } else if (px != originBlockX || pz != originBlockZ) {
+                      shiftSimulationGrid(px - originBlockX, pz - originBlockZ);
+                      originBlockX = px;
+                      originBlockZ = pz;
+                      scanWaterWorld(level, player);
+                  } else if (tickCounter % 5 == 0) {
+                      scanWaterWorld(level, player);
                   }
 
-                  if (tickCounter % 4 == 0) {
-                      scanWaterSurface(level, localPlayer);
+                  if (!hasAnyWater) {
+                      return;
                   }
 
-                  handleEntityWaves(level, localPlayer);
-                  handleRainRipples(level);
+                  // Salva estado anterior para interpolacao super lisa a 60+ FPS
+                  System.arraycopy(curr, 0, renderPrev, 0, curr.length);
+                  System.arraycopy(foam, 0, foamPrev, 0, foam.length);
 
-                  if (tickCounter % 200 == 0 && WAS_IN_WATER.size() > 150) {
+                  // Aplica perturbacoes reais de jogadores, mobs, barcos, itens e chuva
+                  applyEntityDisturbances(level, player);
+                  applyRainDisturbances(level);
+
+                  // Roda a equacao fisica real de ondas 2D (2 subpassos por tick para fluidez real)
+                  stepWaveEquation();
+                  stepWaveEquation();
+                  updateFoam();
+
+                  if (tickCounter % 200 == 0 && WAS_IN_WATER.size() > 160) {
                       WAS_IN_WATER.clear();
                   }
               }
 
-              private static void scanWaterSurface(ClientLevel level, Player player) {
-                  WATER_CELLS.clear();
+              private static void shiftSimulationGrid(int shiftBlocksX, int shiftBlocksZ) {
+                  int shiftGX = shiftBlocksX * SUB;
+                  int shiftGZ = shiftBlocksZ * SUB;
 
-                  int px = (int) Math.floor(player.getX());
-                  int py = (int) Math.floor(player.getY());
-                  int pz = (int) Math.floor(player.getZ());
+                  Arrays.fill(tmpA, 0.0f);
+                  Arrays.fill(tmpB, 0.0f);
+                  Arrays.fill(tmpC, 0.0f);
+
+                  for (int gz = 0; gz < N; gz++) {
+                      int oldGZ = gz + shiftGZ;
+                      if (oldGZ < 0 || oldGZ >= N) continue;
+                      int rowNew = gz * N;
+                      int rowOld = oldGZ * N;
+                      for (int gx = 0; gx < N; gx++) {
+                          int oldGX = gx + shiftGX;
+                          if (oldGX < 0 || oldGX >= N) continue;
+                          tmpA[rowNew + gx] = curr[rowOld + oldGX];
+                          tmpB[rowNew + gx] = prev[rowOld + oldGX];
+                          tmpC[rowNew + gx] = foam[rowOld + oldGX];
+                      }
+                  }
+
+                  System.arraycopy(tmpA, 0, curr, 0, curr.length);
+                  System.arraycopy(tmpB, 0, prev, 0, prev.length);
+                  System.arraycopy(tmpC, 0, foam, 0, foam.length);
+                  System.arraycopy(tmpA, 0, renderPrev, 0, renderPrev.length);
+                  System.arraycopy(tmpC, 0, foamPrev, 0, foamPrev.length);
+              }
+
+              private static void scanWaterWorld(ClientLevel level, Player player) {
+                  int baseX = originBlockX - BLOCK_RADIUS;
+                  int baseZ = originBlockZ - BLOCK_RADIUS;
+                  int py = Mth.floor(player.getY());
 
                   BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
                   BlockPos.MutableBlockPos check = new BlockPos.MutableBlockPos();
 
-                  for (int dx = -SURFACE_SCAN_RADIUS; dx <= SURFACE_SCAN_RADIUS; dx++) {
-                      for (int dz = -SURFACE_SCAN_RADIUS; dz <= SURFACE_SCAN_RADIUS; dz++) {
-                          if (dx * dx + dz * dz > SURFACE_SCAN_RADIUS * SURFACE_SCAN_RADIUS) {
+                  hasAnyWater = false;
+
+                  for (int bz = 0; bz < GRID_BLOCKS; bz++) {
+                      int wz = baseZ + bz;
+                      for (int bx = 0; bx < GRID_BLOCKS; bx++) {
+                          int wx = baseX + bx;
+                          WaterColumn col = COLUMNS[colIdx(bx, bz)];
+                          col.hasWater = false;
+                          col.worldX = wx;
+                          col.worldZ = wz;
+
+                          int dx = bx - BLOCK_RADIUS;
+                          int dz = bz - BLOCK_RADIUS;
+                          if (dx * dx + dz * dz > (BLOCK_RADIUS + 1) * (BLOCK_RADIUS + 1)) {
                               continue;
                           }
-                          for (int dy = 5; dy >= -6; dy--) {
-                              int wx = px + dx;
-                              int wy = py + dy;
-                              int wz = pz + dz;
-                              pos.set(wx, wy, wz);
 
+                          for (int dy = 6; dy >= -7; dy--) {
+                              int wy = py + dy;
+                              pos.set(wx, wy, wz);
                               FluidState fluid = level.getFluidState(pos);
                               if (!fluid.is(FluidTags.WATER)) {
                                   continue;
                               }
-
                               check.set(wx, wy + 1, wz);
                               if (level.getFluidState(check).is(FluidTags.WATER)) {
                                   continue;
                               }
 
-                              float surfaceY = wy + fluid.getHeight(level, pos);
-                              int shoreMask = 0;
+                              col.hasWater = true;
+                              col.worldY = wy;
+                              col.surfaceY = wy + fluid.getHeight(level, pos);
+                              hasAnyWater = true;
 
+                              // Mede a profundidade real ate o fundo do rio/mar (1..10 blocos)
+                              int depth = 1;
+                              int floorY = wy - 1;
+                              for (int d = 1; d <= 9; d++) {
+                                  check.set(wx, wy - d, wz);
+                                  if (level.getFluidState(check).is(FluidTags.WATER)) {
+                                      depth++;
+                                      floorY = wy - d - 1;
+                                  } else {
+                                      floorY = wy - d;
+                                      break;
+                                  }
+                              }
+                              col.depth = depth;
+                              col.floorY = floorY;
+
+                              int shoreMask = 0;
                               if (isSolidShore(level, check.set(wx, wy, wz - 1))) shoreMask |= 1;
                               if (isSolidShore(level, check.set(wx, wy, wz + 1))) shoreMask |= 2;
                               if (isSolidShore(level, check.set(wx + 1, wy, wz))) shoreMask |= 4;
                               if (isSolidShore(level, check.set(wx - 1, wy, wz))) shoreMask |= 8;
+                              col.shoreMask = shoreMask;
 
-                              boolean skyVisible = level.canSeeSky(check.set(wx, wy + 1, wz));
-                              WATER_CELLS.add(new WaterCell(wx, wy, wz, surfaceY, shoreMask, skyVisible));
+                              check.set(wx, wy + 1, wz);
+                              col.skyVisible = level.canSeeSky(check);
+                              col.skyLight = level.getBrightness(LightLayer.SKY, check) / 15.0f;
+                              col.blockLight = level.getBrightness(LightLayer.BLOCK, check) / 15.0f;
+
+                              int color = BiomeColors.getAverageWaterColor(level, pos);
+                              col.biomeR = ((color >> 16) & 255) / 255.0f;
+                              col.biomeG = ((color >> 8) & 255) / 255.0f;
+                              col.biomeB = (color & 255) / 255.0f;
                               break;
+                          }
+                      }
+                  }
+
+                  // Calcula abertura da agua (lagos/oceanos ondulam mais que pocinhas de 1 bloco)
+                  for (int bz = 0; bz < GRID_BLOCKS; bz++) {
+                      for (int bx = 0; bx < GRID_BLOCKS; bx++) {
+                          WaterColumn col = COLUMNS[colIdx(bx, bz)];
+                          if (!col.hasWater) continue;
+                          int waterNeighbors = 0;
+                          for (int oz = -2; oz <= 2; oz++) {
+                              for (int ox = -2; ox <= 2; ox++) {
+                                  int nx = bx + ox;
+                                  int nz = bz + oz;
+                                  if (nx >= 0 && nx < GRID_BLOCKS && nz >= 0 && nz < GRID_BLOCKS) {
+                                      WaterColumn nc = COLUMNS[colIdx(nx, nz)];
+                                      if (nc.hasWater && Math.abs(nc.surfaceY - col.surfaceY) < 0.25f) {
+                                          waterNeighbors++;
+                                      }
+                                  }
+                              }
+                          }
+                          col.openness = Mth.clamp((waterNeighbors - 3.0f) / 18.0f, 0.12f, 1.0f);
+                      }
+                  }
+
+                  // Atualiza mascara de vertices de agua e bordas refletoras
+                  Arrays.fill(isWaterNode, false);
+                  Arrays.fill(isBoundaryNode, false);
+
+                  for (int gz = 0; gz < N; gz++) {
+                      int bzA = Math.min(GRID_BLOCKS - 1, gz / SUB);
+                      int bzB = (gz % SUB == 0 && gz > 0) ? bzA - 1 : bzA;
+                      for (int gx = 0; gx < N; gx++) {
+                          int bxA = Math.min(GRID_BLOCKS - 1, gx / SUB);
+                          int bxB = (gx % SUB == 0 && gx > 0) ? bxA - 1 : bxA;
+
+                          boolean anyWater = false;
+                          boolean allSameWater = true;
+                          float refY = Float.NaN;
+
+                          for (int tz = bzB; tz <= bzA; tz++) {
+                              for (int tx = bxB; tx <= bxA; tx++) {
+                                  WaterColumn c = COLUMNS[colIdx(tx, tz)];
+                                  if (c.hasWater) {
+                                      anyWater = true;
+                                      if (Float.isNaN(refY)) {
+                                          refY = c.surfaceY;
+                                      } else if (Math.abs(c.surfaceY - refY) > 0.22f) {
+                                          allSameWater = false;
+                                      }
+                                  } else {
+                                      allSameWater = false;
+                                  }
+                              }
+                          }
+
+                          int idx = nodeIdx(gx, gz);
+                          isWaterNode[idx] = anyWater;
+                          isBoundaryNode[idx] = anyWater && !allSameWater;
+                          if (!anyWater) {
+                              curr[idx] = 0.0f;
+                              prev[idx] = 0.0f;
+                              foam[idx] = 0.0f;
                           }
                       }
                   }
@@ -478,8 +661,40 @@ jobs:
                   return !state.isAir() && !state.canBeReplaced();
               }
 
-              private static void handleEntityWaves(ClientLevel level, Player localPlayer) {
-                  AABB searchArea = localPlayer.getBoundingBox().inflate(18.0, 8.0, 18.0);
+              private static void addSplashImpulse(double worldX, double worldZ, float radiusBlocks, float amplitude, float foamAmount) {
+                  float cx = (float) ((worldX - (originBlockX - BLOCK_RADIUS)) * SUB);
+                  float cz = (float) ((worldZ - (originBlockZ - BLOCK_RADIUS)) * SUB);
+                  float rGrid = radiusBlocks * SUB;
+                  int rInt = (int) Math.ceil(rGrid);
+
+                  int minX = Math.max(1, (int) Math.floor(cx) - rInt);
+                  int maxX = Math.min(N - 2, (int) Math.ceil(cx) + rInt);
+                  int minZ = Math.max(1, (int) Math.floor(cz) - rInt);
+                  int maxZ = Math.min(N - 2, (int) Math.ceil(cz) + rInt);
+
+                  for (int gz = minZ; gz <= maxZ; gz++) {
+                      float dz = gz - cz;
+                      for (int gx = minX; gx <= maxX; gx++) {
+                          int idx = nodeIdx(gx, gz);
+                          if (!isWaterNode[idx]) continue;
+
+                          float dx = gx - cx;
+                          float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                          if (dist < rGrid) {
+                              float t = dist / rGrid;
+                              float weight = (float) Math.cos(t * Math.PI * 0.5);
+                              weight = weight * weight;
+                              curr[idx] = Mth.clamp(curr[idx] + amplitude * weight, -0.34f, 0.42f);
+                              if (foamAmount > 0.0f) {
+                                  foam[idx] = Math.min(1.0f, foam[idx] + foamAmount * weight);
+                              }
+                          }
+                      }
+                  }
+              }
+
+              private static void applyEntityDisturbances(ClientLevel level, Player localPlayer) {
+                  AABB searchArea = localPlayer.getBoundingBox().inflate(BLOCK_RADIUS - 1.0, 7.0, BLOCK_RADIUS - 1.0);
                   List<Entity> entities = level.getEntitiesOfClass(Entity.class, searchArea);
 
                   for (Entity entity : entities) {
@@ -495,116 +710,198 @@ jobs:
                           continue;
                       }
 
-                      double surfaceY = findWaterSurfaceY(level, entity.getX(), entity.getY(), entity.getZ());
-                      if (Double.isNaN(surfaceY)) {
-                          continue;
-                      }
-
                       double dx = entity.getX() - entity.xo;
                       double dy = entity.getY() - entity.yo;
                       double dz = entity.getZ() - entity.zo;
                       double horizSpeed = Math.sqrt(dx * dx + dz * dz);
 
+                      // Pulo / queda na agua = cratera + anel de onda grande que rebate nas margens!
                       if (!wasIn) {
-                          float impact = (float) Math.min(1.5, Math.abs(dy) * 2.2 + 0.35);
-                          addWave(entity.getX(), surfaceY, entity.getZ(), 2.4f + impact * 2.6f, 0.085f, 0.75f + impact * 0.55f, true);
-                          addWave(entity.getX(), surfaceY, entity.getZ(), 1.6f + impact * 1.4f, 0.055f, 0.55f + impact * 0.3f, true);
+                          float impact = (float) Mth.clamp(Math.abs(dy) * 1.9 + 0.35, 0.35, 1.8);
+                          addSplashImpulse(entity.getX(), entity.getZ(), 0.75f + impact * 0.35f, -0.24f * impact, 0.85f);
+                          addSplashImpulse(entity.getX(), entity.getZ(), 1.35f + impact * 0.45f, 0.16f * impact, 0.55f);
 
-                          int splashCount = (int) (8 + impact * 14);
+                          int splashCount = (int) (10 + impact * 16);
                           for (int i = 0; i < splashCount; i++) {
                               double angle = RANDOM.nextDouble() * Math.PI * 2.0;
-                              double sp = 0.06 + RANDOM.nextDouble() * 0.16 * impact;
+                              double sp = 0.05 + RANDOM.nextDouble() * 0.17 * impact;
                               level.addParticle(
                                       ParticleTypes.SPLASH,
-                                      entity.getX() + Math.cos(angle) * 0.25,
-                                      surfaceY + 0.05,
-                                      entity.getZ() + Math.sin(angle) * 0.25,
+                                      entity.getX() + Math.cos(angle) * 0.28,
+                                      entity.getY() + 0.5,
+                                      entity.getZ() + Math.sin(angle) * 0.28,
                                       Math.cos(angle) * sp,
-                                      0.12 + RANDOM.nextDouble() * 0.18 * impact,
+                                      0.12 + RANDOM.nextDouble() * 0.20 * impact,
                                       Math.sin(angle) * sp
                               );
                           }
                           continue;
                       }
 
-                      if (horizSpeed > 0.03) {
-                          int interval = (horizSpeed > 0.16) ? 2 : 4;
-                          if ((tickCounter + entity.getId()) % interval == 0) {
-                              float sizeScale = entity instanceof Boat ? 1.5f : (entity instanceof ItemEntity ? 0.55f : 1.0f);
-                              float maxR = (1.5f + (float) Math.min(2.5, horizSpeed * 7.5)) * sizeScale;
-                              float strength = (0.45f + (float) Math.min(0.65, horizSpeed * 2.4)) * sizeScale;
+                      // Andando, correndo, nadando ou de barco -> cria proa positiva + esteira negativa em V!
+                      if (horizSpeed > 0.02) {
+                          float scale = entity instanceof Boat ? 1.55f : (entity instanceof ItemEntity ? 0.45f : 1.0f);
+                          float power = (float) Math.min(1.35, horizSpeed * 4.5) * scale;
 
-                              double wakeX = entity.getX() - (dx / horizSpeed) * 0.22;
-                              double wakeZ = entity.getZ() - (dz / horizSpeed) * 0.22;
-                              addWave(wakeX, surfaceY, wakeZ, maxR, 0.062f, strength, true);
+                          double dirX = dx / horizSpeed;
+                          double dirZ = dz / horizSpeed;
 
-                              int particles = horizSpeed > 0.15 ? 3 : 1;
-                              for (int i = 0; i < particles; i++) {
+                          // Onda levantando na frente do corpo/barco
+                          addSplashImpulse(entity.getX() + dirX * 0.35, entity.getZ() + dirZ * 0.35, 0.72f * scale, 0.11f * power, 0.42f * power);
+                          // Depressao/esteira logo atras
+                          addSplashImpulse(entity.getX() - dirX * 0.38, entity.getZ() - dirZ * 0.38, 0.80f * scale, -0.095f * power, 0.55f * power);
+
+                          if (horizSpeed > 0.08 && (tickCounter + entity.getId()) % 2 == 0) {
+                              int pCount = horizSpeed > 0.16 ? 3 : 1;
+                              for (int i = 0; i < pCount; i++) {
                                   double ox = (RANDOM.nextDouble() - 0.5) * 0.45;
                                   double oz = (RANDOM.nextDouble() - 0.5) * 0.45;
                                   level.addParticle(
                                           ParticleTypes.SPLASH,
-                                          wakeX + ox,
-                                          surfaceY + 0.03,
-                                          wakeZ + oz,
-                                          -dx * 0.4 + (RANDOM.nextDouble() - 0.5) * 0.05,
-                                          0.06 + horizSpeed * 0.35,
-                                          -dz * 0.4 + (RANDOM.nextDouble() - 0.5) * 0.05
+                                          entity.getX() - dirX * 0.25 + ox,
+                                          entity.getY() + 0.65,
+                                          entity.getZ() - dirZ * 0.25 + oz,
+                                          -dx * 0.45 + (RANDOM.nextDouble() - 0.5) * 0.06,
+                                          0.07 + horizSpeed * 0.38,
+                                          -dz * 0.45 + (RANDOM.nextDouble() - 0.5) * 0.06
                                   );
-                                  if (RANDOM.nextFloat() < 0.45f) {
+                                  if (RANDOM.nextFloat() < 0.4f) {
                                       level.addParticle(
                                               ParticleTypes.BUBBLE_POP,
-                                              wakeX + ox * 1.2,
-                                              surfaceY + 0.02,
-                                              wakeZ + oz * 1.2,
-                                              0.0, 0.01, 0.0
+                                              entity.getX() - dirX * 0.35 + ox,
+                                              entity.getY() + 0.55,
+                                              entity.getZ() - dirZ * 0.35 + oz,
+                                              0.0, 0.02, 0.0
                                       );
                                   }
                               }
-
-                              if (entity == localPlayer && tickCounter % 12 == 0 && horizSpeed > 0.11) {
-                                  level.playLocalSound(
-                                          entity.getX(), surfaceY, entity.getZ(),
-                                          SoundEvents.GENERIC_SWIM,
-                                          SoundSource.PLAYERS,
-                                          0.18f,
-                                          1.05f + RANDOM.nextFloat() * 0.3f,
-                                          false
-                                  );
-                              }
                           }
-                      } else if ((tickCounter + entity.getId() * 7) % 26 == 0) {
-                          addWave(entity.getX(), surfaceY, entity.getZ(), 1.35f, 0.032f, 0.28f, false);
+
+                          if (entity == localPlayer && horizSpeed > 0.10 && tickCounter % 11 == 0) {
+                              level.playLocalSound(
+                                      entity.getX(), entity.getY(), entity.getZ(),
+                                      SoundEvents.GENERIC_SWIM,
+                                      SoundSource.PLAYERS,
+                                      0.20f,
+                                      1.0f + RANDOM.nextFloat() * 0.35f,
+                                      false
+                              );
+                          }
+                      } else if ((tickCounter + entity.getId() * 5) % 14 == 0) {
+                          // Ondulacao suave quando parado boiando na agua
+                          float sign = ((tickCounter / 14) % 2 == 0) ? 1.0f : -1.0f;
+                          addSplashImpulse(entity.getX(), entity.getZ(), 0.55f, 0.032f * sign, 0.08f);
                       }
                   }
               }
 
-              private static void handleRainRipples(ClientLevel level) {
-                  if (!level.isRaining() || WATER_CELLS.isEmpty()) {
+              private static void applyRainDisturbances(ClientLevel level) {
+                  if (!level.isRaining()) {
                       return;
                   }
 
                   BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-                  for (int i = 0; i < 4; i++) {
-                      WaterCell cell = WATER_CELLS.get(RANDOM.nextInt(WATER_CELLS.size()));
-                      if (!cell.skyVisible) {
-                          continue;
-                      }
-                      pos.set(cell.x, cell.y + 1, cell.z);
+                  for (int i = 0; i < 6; i++) {
+                      int bx = 2 + RANDOM.nextInt(GRID_BLOCKS - 4);
+                      int bz = 2 + RANDOM.nextInt(GRID_BLOCKS - 4);
+                      WaterColumn col = COLUMNS[colIdx(bx, bz)];
+                      if (!col.hasWater || !col.skyVisible) continue;
+                      pos.set(col.worldX, col.worldY + 1, col.worldZ);
                       if (level.isRainingAt(pos)) {
-                          double rx = cell.x + 0.15 + RANDOM.nextDouble() * 0.7;
-                          double rz = cell.z + 0.15 + RANDOM.nextDouble() * 0.7;
-                          addWave(rx, cell.surfaceY, rz, 0.78f, 0.042f, 0.35f, false);
+                          addSplashImpulse(
+                                  col.worldX + RANDOM.nextDouble(),
+                                  col.worldZ + RANDOM.nextDouble(),
+                                  0.38f,
+                                  -0.065f,
+                                  0.18f
+                          );
+                      }
+                  }
+              }
+
+              private static void stepWaveEquation() {
+                  final float c2 = 0.23f;       // Velocidade de propagacao realista (estavel)
+                  final float damping = 0.968f; // Amortecimento natural da agua
+
+                  for (int gz = 1; gz < N - 1; gz++) {
+                      int row = gz * N;
+                      for (int gx = 1; gx < N - 1; gx++) {
+                          int idx = row + gx;
+                          if (!isWaterNode[idx] || isBoundaryNode[idx]) {
+                              next[idx] = 0.0f;
+                              continue;
+                          }
+
+                          float center = curr[idx];
+                          float left = isWaterNode[idx - 1] ? curr[idx - 1] : center;
+                          float right = isWaterNode[idx + 1] ? curr[idx + 1] : center;
+                          float up = isWaterNode[idx - N] ? curr[idx - N] : center;
+                          float down = isWaterNode[idx + N] ? curr[idx + N] : center;
+
+                          float laplacian = (left + right + up + down) - 4.0f * center;
+                          float val = (2.0f * center - prev[idx] + c2 * laplacian) * damping;
+                          next[idx] = Mth.clamp(val, -0.34f, 0.42f);
+                      }
+                  }
+
+                  // Bordas refletem as ondas de volta para dentro da agua (efeito real de praia/parede!)
+                  for (int gz = 1; gz < N - 1; gz++) {
+                      int row = gz * N;
+                      for (int gx = 1; gx < N - 1; gx++) {
+                          int idx = row + gx;
+                          if (!isBoundaryNode[idx]) continue;
+
+                          float sum = 0.0f;
+                          int count = 0;
+                          if (isWaterNode[idx - 1] && !isBoundaryNode[idx - 1]) { sum += next[idx - 1]; count++; }
+                          if (isWaterNode[idx + 1] && !isBoundaryNode[idx + 1]) { sum += next[idx + 1]; count++; }
+                          if (isWaterNode[idx - N] && !isBoundaryNode[idx - N]) { sum += next[idx - N]; count++; }
+                          if (isWaterNode[idx + N] && !isBoundaryNode[idx + N]) { sum += next[idx + N]; count++; }
+
+                          if (count > 0) {
+                              float reflected = (sum / count) * 0.80f;
+                              next[idx] = reflected;
+                              if (Math.abs(reflected) > 0.03f) {
+                                  foam[idx] = Math.min(1.0f, foam[idx] + Math.abs(reflected) * 1.4f);
+                              }
+                          } else {
+                              next[idx] = 0.0f;
+                          }
+                      }
+                  }
+
+                  // Avanca buffers (prev <- curr <- next)
+                  System.arraycopy(curr, 0, prev, 0, curr.length);
+                  System.arraycopy(next, 0, curr, 0, curr.length);
+              }
+
+              private static void updateFoam() {
+                  for (int gz = 1; gz < N - 1; gz++) {
+                      int row = gz * N;
+                      for (int gx = 1; gx < N - 1; gx++) {
+                          int idx = row + gx;
+                          if (!isWaterNode[idx]) {
+                              foam[idx] = 0.0f;
+                              continue;
+                          }
+
+                          float f = foam[idx] * 0.91f;
+                          float speed = Math.abs(curr[idx] - prev[idx]);
+                          if (speed > 0.045f) {
+                              f += (speed - 0.045f) * 3.8f;
+                          }
+                          foam[idx] = Mth.clamp(f, 0.0f, 1.0f);
                       }
                   }
               }
           }
-          END_MANAGER
+          END_SIM
 
-          cat << 'END_RENDERER' > src/main/java/com/aguarealista/client/WaterWaveRenderer.java
+          cat << 'END_RENDERER' > src/main/java/com/aguarealista/client/WaterRealisticRenderer.java
           package com.aguarealista.client;
 
           import com.aguarealista.AguaRealistaMod;
+          import com.mojang.blaze3d.platform.GlStateManager;
           import com.mojang.blaze3d.systems.RenderSystem;
           import com.mojang.blaze3d.vertex.BufferBuilder;
           import com.mojang.blaze3d.vertex.DefaultVertexFormat;
@@ -622,16 +919,12 @@ jobs:
           import net.minecraftforge.fml.common.Mod;
           import org.joml.Matrix4f;
 
-          import java.util.List;
-
           @Mod.EventBusSubscriber(modid = AguaRealistaMod.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
-          public class WaterWaveRenderer {
-
-              private static final int RING_SEGMENTS = 24;
+          public class WaterRealisticRenderer {
 
               @SubscribeEvent
               public static void onRenderLevelStage(RenderLevelStageEvent event) {
-                  if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+                  if (!WaterSimulation.initialized || !WaterSimulation.hasAnyWater) {
                       return;
                   }
 
@@ -641,37 +934,150 @@ jobs:
                       return;
                   }
 
-                  List<WaterWaveManager.WaterCell> cells = WaterWaveManager.getWaterCells();
-                  List<WaterWaveManager.Wave> waves = WaterWaveManager.getWaves();
-                  if (cells.isEmpty() && waves.isEmpty()) {
-                      return;
+                  if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_SOLID_BLOCKS) {
+                      renderUnderwaterCaustics(event, level);
+                  } else if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_TRANSLUCENT_BLOCKS) {
+                      renderRealisticWaterSurface(event, level);
+                  }
+              }
+
+              // PASSO 1: Luzes refratadas dancando no fundo da agua (Causticas reais!)
+              private static void renderUnderwaterCaustics(RenderLevelStageEvent event, ClientLevel level) {
+                  float partialTick = event.getPartialTick();
+                  float sunAngle = level.getTimeOfDay(partialTick) * (float) (Math.PI * 2.0);
+                  float sunY = Mth.cos(sunAngle);
+                  float dayIntensity = Mth.clamp(sunY * 1.8f + 0.25f, 0.10f, 1.0f);
+                  if (level.isRaining()) {
+                      dayIntensity *= 0.45f;
                   }
 
                   PoseStack poseStack = event.getPoseStack();
                   Vec3 camPos = event.getCamera().getPosition();
+                  float time = (level.getGameTime() + partialTick) * 0.11f;
+
+                  poseStack.pushPose();
+                  poseStack.translate(-camPos.x, -camPos.y, -camPos.z);
+                  Matrix4f matrix = poseStack.last().pose();
+
+                  RenderSystem.enableBlend();
+                  RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
+                  RenderSystem.enableDepthTest();
+                  RenderSystem.depthMask(false);
+                  RenderSystem.disableCull();
+                  RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+                  Tesselator tesselator = Tesselator.getInstance();
+                  BufferBuilder buffer = tesselator.getBuilder();
+                  buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+
+                  for (int bz = 0; bz < WaterSimulation.GRID_BLOCKS; bz++) {
+                      for (int bx = 0; bx < WaterSimulation.GRID_BLOCKS; bx++) {
+                          WaterSimulation.WaterColumn col = WaterSimulation.COLUMNS[WaterSimulation.colIdx(bx, bz)];
+                          if (!col.hasWater || col.depth > 7 || !col.skyVisible) {
+                              continue;
+                          }
+
+                          float dx = (col.worldX + 0.5f) - (float) camPos.x;
+                          float dz = (col.worldZ + 0.5f) - (float) camPos.z;
+                          float distSq = dx * dx + dz * dz;
+                          if (distSq > 169.0f) {
+                              continue;
+                          }
+
+                          float depthFade = 1.0f - (col.depth / 8.0f);
+                          float distFade = Mth.clamp((13.0f - (float) Math.sqrt(distSq)) / 3.0f, 0.0f, 1.0f);
+                          float baseStrength = depthFade * distFade * dayIntensity * col.skyLight * 0.34f;
+                          if (baseStrength <= 0.01f) {
+                              continue;
+                          }
+
+                          float y = col.floorY + 1.018f;
+                          // Subdivide o fundo em 2x2 para formar redes de luz refratada
+                          for (int sz = 0; sz < 2; sz++) {
+                              float z0 = col.worldZ + sz * 0.5f;
+                              float z1 = z0 + 0.5f;
+                              for (int sx = 0; sx < 2; sx++) {
+                                  float x0 = col.worldX + sx * 0.5f;
+                                  float x1 = x0 + 0.5f;
+
+                                  emitCausticVertex(buffer, matrix, x0, y, z0, time, baseStrength);
+                                  emitCausticVertex(buffer, matrix, x1, y, z0, time, baseStrength);
+                                  emitCausticVertex(buffer, matrix, x1, y, z1, time, baseStrength);
+                                  emitCausticVertex(buffer, matrix, x0, y, z1, time, baseStrength);
+                              }
+                          }
+                      }
+                  }
+
+                  tesselator.end();
+
+                  RenderSystem.defaultBlendFunc();
+                  RenderSystem.depthMask(true);
+                  RenderSystem.enableCull();
+                  RenderSystem.disableBlend();
+                  poseStack.popPose();
+              }
+
+              private static void emitCausticVertex(BufferBuilder buffer, Matrix4f matrix, float x, float y, float z, float time, float strength) {
+                  double c1 = Math.sin(x * 2.4 + time * 1.2 + Math.cos(z * 2.1 - time * 0.9));
+                  double c2 = Math.cos(z * 2.6 - time * 1.1 + Math.sin(x * 1.9 + time * 1.3));
+                  float pattern = (float) Math.pow(Mth.clamp((float) ((c1 * c2) * 0.5 + 0.5), 0.0f, 1.0f), 2.5);
+                  float a = pattern * strength;
+                  buffer.vertex(matrix, x, y, z).color(0.58f, 0.92f, 1.0f, a).endVertex();
+              }
+
+              // PASSO 2: Superficie 3D em alta resolucao com fisica real, Fresnel, reflexos e espuma!
+              private static void renderRealisticWaterSurface(RenderLevelStageEvent event, ClientLevel level) {
+                  PoseStack poseStack = event.getPoseStack();
+                  Vec3 camPos = event.getCamera().getPosition();
                   float partialTick = event.getPartialTick();
-                  float time = (level.getGameTime() + partialTick) * 0.085f;
+                  float time = (level.getGameTime() + partialTick) * 0.095f;
 
-                  long dayTime = level.getDayTime() % 24000L;
-                  float shimmerR = 0.85f;
-                  float shimmerG = 0.96f;
-                  float shimmerB = 1.0f;
-                  float shimmerStrength = 1.0f;
+                  // Direcao real do Sol ou da Lua
+                  float sunAngle = level.getTimeOfDay(partialTick) * (float) (Math.PI * 2.0);
+                  float sunX = -Mth.sin(sunAngle);
+                  float sunY = Mth.cos(sunAngle);
+                  float sunZ = 0.24f;
 
-                  if ((dayTime >= 11800 && dayTime <= 13600) || (dayTime >= 22400)) {
-                      shimmerR = 1.0f;
-                      shimmerG = 0.72f;
-                      shimmerB = 0.42f;
-                      shimmerStrength = 0.95f;
-                  } else if (dayTime > 13600 && dayTime < 22400) {
-                      shimmerR = 0.55f;
-                      shimmerG = 0.72f;
-                      shimmerB = 0.95f;
-                      shimmerStrength = 0.55f;
+                  boolean isNight = sunY < -0.05f;
+                  float lx = isNight ? -sunX : sunX;
+                  float ly = isNight ? -sunY : sunY;
+                  float lz = isNight ? -sunZ : sunZ;
+                  float lLen = (float) Math.sqrt(lx * lx + ly * ly + lz * lz);
+                  lx /= lLen;
+                  ly /= lLen;
+                  lz /= lLen;
+
+                  // Cor do brilho solar / por do sol / luar
+                  float specR, specG, specB, specMult;
+                  if (isNight) {
+                      specR = 0.65f;
+                      specG = 0.80f;
+                      specB = 1.0f;
+                      specMult = 0.55f;
+                  } else if (sunY < 0.28f) {
+                      // Por do sol / nascer do sol dourado
+                      float t = Mth.clamp(sunY / 0.28f, 0.0f, 1.0f);
+                      specR = 1.0f;
+                      specG = Mth.lerp(t, 0.52f, 0.95f);
+                      specB = Mth.lerp(t, 0.22f, 0.88f);
+                      specMult = 1.25f;
+                  } else {
+                      specR = 1.0f;
+                      specG = 0.98f;
+                      specB = 0.92f;
+                      specMult = 1.15f;
                   }
+
                   if (level.isRaining()) {
-                      shimmerStrength *= 0.45f;
+                      specMult *= 0.35f;
                   }
+
+                  float dayFactor = Mth.clamp(sunY * 1.9f + 0.35f, 0.14f, 1.0f);
+                  Vec3 skyColor = level.getSkyColor(camPos, partialTick);
+                  float skyR = Mth.clamp((float) skyColor.x * 1.18f + 0.06f, 0.04f, 1.0f);
+                  float skyG = Mth.clamp((float) skyColor.y * 1.18f + 0.08f, 0.06f, 1.0f);
+                  float skyB = Mth.clamp((float) skyColor.z * 1.22f + 0.10f, 0.10f, 1.0f);
 
                   poseStack.pushPose();
                   poseStack.translate(-camPos.x, -camPos.y, -camPos.z);
@@ -688,12 +1094,47 @@ jobs:
                   BufferBuilder buffer = tesselator.getBuilder();
                   buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
 
-                  for (int i = 0; i < cells.size(); i++) {
-                      renderWaterCell(buffer, matrix, cells.get(i), time, partialTick, shimmerR, shimmerG, shimmerB, shimmerStrength);
-                  }
+                  for (int bz = 0; bz < WaterSimulation.GRID_BLOCKS; bz++) {
+                      for (int bx = 0; bx < WaterSimulation.GRID_BLOCKS; bx++) {
+                          WaterSimulation.WaterColumn col = WaterSimulation.COLUMNS[WaterSimulation.colIdx(bx, bz)];
+                          if (!col.hasWater) {
+                              continue;
+                          }
 
-                  for (int i = 0; i < waves.size(); i++) {
-                      renderDynamicWave(buffer, matrix, level, waves.get(i), partialTick);
+                          float dx = (col.worldX + 0.5f) - (float) camPos.x;
+                          float dz = (col.worldZ + 0.5f) - (float) camPos.z;
+                          float distSq = dx * dx + dz * dz;
+                          if (distSq > 205.0f) {
+                              continue;
+                          }
+
+                          int baseGX = bx * WaterSimulation.SUB;
+                          int baseGZ = bz * WaterSimulation.SUB;
+
+                          // Renderiza malha 3x3 de alta resolucao para este bloco de agua
+                          for (int sz = 0; sz < WaterSimulation.SUB; sz++) {
+                              int gz0 = baseGZ + sz;
+                              int gz1 = gz0 + 1;
+                              for (int sx = 0; sx < WaterSimulation.SUB; sx++) {
+                                  int gx0 = baseGX + sx;
+                                  int gx1 = gx0 + 1;
+
+                                  emitWaterSurfaceVertex(buffer, matrix, col, gx0, gz0, camPos, time, partialTick,
+                                          lx, ly, lz, specR, specG, specB, specMult, skyR, skyG, skyB, dayFactor);
+                                  emitWaterSurfaceVertex(buffer, matrix, col, gx1, gz0, camPos, time, partialTick,
+                                          lx, ly, lz, specR, specG, specB, specMult, skyR, skyG, skyB, dayFactor);
+                                  emitWaterSurfaceVertex(buffer, matrix, col, gx1, gz1, camPos, time, partialTick,
+                                          lx, ly, lz, specR, specG, specB, specMult, skyR, skyG, skyB, dayFactor);
+                                  emitWaterSurfaceVertex(buffer, matrix, col, gx0, gz1, camPos, time, partialTick,
+                                          lx, ly, lz, specR, specG, specB, specMult, skyR, skyG, skyB, dayFactor);
+                              }
+                          }
+
+                          // Espuma animada quebrando nas bordas/praias
+                          if (col.shoreMask != 0) {
+                              renderShoreFoam(buffer, matrix, col, baseGX, baseGZ, camPos, time, partialTick, dayFactor);
+                          }
+                      }
                   }
 
                   tesselator.end();
@@ -704,166 +1145,195 @@ jobs:
                   poseStack.popPose();
               }
 
-              private static void renderWaterCell(
+              private static float sampleTotalHeight(int gx, int gz, float openness, float time, float partialTick) {
+                  double wx = (WaterSimulation.originBlockX - WaterSimulation.BLOCK_RADIUS) + gx * WaterSimulation.STEP;
+                  double wz = (WaterSimulation.originBlockZ - WaterSimulation.BLOCK_RADIUS) + gz * WaterSimulation.STEP;
+                  float simH = WaterSimulation.getSimHeight(gx, gz, partialTick);
+                  float ambH = WaterSimulation.getAmbientWave(wx, wz, time) * openness;
+                  int idx = WaterSimulation.nodeIdx(gx, gz);
+                  if (WaterSimulation.isBoundaryNode[idx]) {
+                      ambH *= 0.35f;
+                  }
+                  return Mth.clamp(simH + ambH, -0.042f, 0.38f);
+              }
+
+              private static void emitWaterSurfaceVertex(
                       BufferBuilder buffer,
                       Matrix4f matrix,
-                      WaterWaveManager.WaterCell cell,
+                      WaterSimulation.WaterColumn col,
+                      int gx, int gz,
+                      Vec3 camPos,
                       float time,
                       float partialTick,
-                      float shimmerR,
-                      float shimmerG,
-                      float shimmerB,
-                      float shimmerStrength
+                      float lx, float ly, float lz,
+                      float specR, float specG, float specB, float specMult,
+                      float skyR, float skyG, float skyB,
+                      float dayFactor
               ) {
-                  float x0 = cell.x;
-                  float x1 = cell.x + 1.0f;
-                  float z0 = cell.z;
-                  float z1 = cell.z + 1.0f;
-                  float baseY = cell.surfaceY + 0.048f;
+                  float wx = (WaterSimulation.originBlockX - WaterSimulation.BLOCK_RADIUS) + gx * WaterSimulation.STEP;
+                  float wz = (WaterSimulation.originBlockZ - WaterSimulation.BLOCK_RADIUS) + gz * WaterSimulation.STEP;
 
-                  float h00 = getAmbientWaveHeight(x0, z0, time) + WaterWaveManager.getWaveDisplacementAt(x0, z0, partialTick);
-                  float h10 = getAmbientWaveHeight(x1, z0, time) + WaterWaveManager.getWaveDisplacementAt(x1, z0, partialTick);
-                  float h11 = getAmbientWaveHeight(x1, z1, time) + WaterWaveManager.getWaveDisplacementAt(x1, z1, partialTick);
-                  float h01 = getAmbientWaveHeight(x0, z1, time) + WaterWaveManager.getWaveDisplacementAt(x0, z1, partialTick);
+                  float hC = sampleTotalHeight(gx, gz, col.openness, time, partialTick);
+                  float wy = col.surfaceY + 0.055f + hC;
 
-                  emitWaterVertex(buffer, matrix, x0, baseY + h00, z0, h00, shimmerR, shimmerG, shimmerB, shimmerStrength);
-                  emitWaterVertex(buffer, matrix, x1, baseY + h10, z0, h10, shimmerR, shimmerG, shimmerB, shimmerStrength);
-                  emitWaterVertex(buffer, matrix, x1, baseY + h11, z1, h11, shimmerR, shimmerG, shimmerB, shimmerStrength);
-                  emitWaterVertex(buffer, matrix, x0, baseY + h01, z1, h01, shimmerR, shimmerG, shimmerB, shimmerStrength);
+                  // Normal 3D real da superficie para iluminacao e reflexo
+                  int gxL = Math.max(0, gx - 1);
+                  int gxR = Math.min(WaterSimulation.N - 1, gx + 1);
+                  int gzD = Math.max(0, gz - 1);
+                  int gzU = Math.min(WaterSimulation.N - 1, gz + 1);
 
-                  if (cell.shoreMask != 0) {
-                      float foamWave = 0.14f + 0.07f * (float) Math.sin(time * 1.6f + cell.x * 0.8f + cell.z * 0.8f);
-                      float foamY = baseY + 0.025f;
-                      float foamAlpha = 0.36f + 0.14f * (float) Math.sin(time * 2.1f + cell.x + cell.z);
+                  float hL = sampleTotalHeight(gxL, gz, col.openness, time, partialTick);
+                  float hR = sampleTotalHeight(gxR, gz, col.openness, time, partialTick);
+                  float hD = sampleTotalHeight(gx, gzD, col.openness, time, partialTick);
+                  float hU = sampleTotalHeight(gx, gzU, col.openness, time, partialTick);
 
-                      if ((cell.shoreMask & 1) != 0) {
-                          drawFoamStrip(buffer, matrix, x0, z0, x1, z0, x1, z0 + foamWave, x0, z0 + foamWave, foamY, foamAlpha);
-                      }
-                      if ((cell.shoreMask & 2) != 0) {
-                          drawFoamStrip(buffer, matrix, x0, z1, x1, z1, x1, z1 - foamWave, x0, z1 - foamWave, foamY, foamAlpha);
-                      }
-                      if ((cell.shoreMask & 4) != 0) {
-                          drawFoamStrip(buffer, matrix, x1, z0, x1, z1, x1 - foamWave, z1, x1 - foamWave, z0, foamY, foamAlpha);
-                      }
-                      if ((cell.shoreMask & 8) != 0) {
-                          drawFoamStrip(buffer, matrix, x0, z0, x0, z1, x0 + foamWave, z1, x0 + foamWave, z0, foamY, foamAlpha);
-                      }
+                  float slopeBoost = 2.15f;
+                  float nx = (hL - hR) * slopeBoost;
+                  float nz = (hD - hU) * slopeBoost;
+                  float ny = 2.0f * WaterSimulation.STEP;
+                  float nLen = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+                  nx /= nLen;
+                  ny /= nLen;
+                  nz /= nLen;
+
+                  // Vetor da camera e efeito Fresnel real
+                  float vx = (float) camPos.x - wx;
+                  float vy = (float) camPos.y - wy;
+                  float vz = (float) camPos.z - wz;
+                  float distSqXZ = vx * vx + vz * vz;
+                  float vLen = (float) Math.sqrt(vx * vx + vy * vy + vz * vz);
+                  if (vLen < 0.001f) vLen = 0.001f;
+                  vx /= vLen;
+                  vy /= vLen;
+                  vz /= vLen;
+
+                  float nDotV = Math.abs(nx * vx + ny * vy + nz * vz);
+                  float fresnel = 0.07f + 0.93f * (float) Math.pow(1.0f - Mth.clamp(nDotV, 0.0f, 1.0f), 3.0);
+
+                  // Absorcao de cor pela profundidade (raso = turquesa cristalino, fundo = azul profundo)
+                  float depthT = Mth.clamp((col.depth - 1.0f) / 6.5f, 0.0f, 1.0f);
+                  float shallowR = Mth.lerp(0.55f, col.biomeR, 0.16f);
+                  float shallowG = Mth.lerp(0.55f, col.biomeG, 0.84f);
+                  float shallowB = Mth.lerp(0.55f, col.biomeB, 0.88f);
+
+                  float deepR = col.biomeR * 0.11f;
+                  float deepG = col.biomeG * 0.28f;
+                  float deepB = col.biomeB * 0.52f;
+
+                  float bodyR = Mth.lerp(depthT, shallowR, deepR);
+                  float bodyG = Mth.lerp(depthT, shallowG, deepG);
+                  float bodyB = Mth.lerp(depthT, shallowB, deepB);
+
+                  // Iluminacao real (ceu + tochas/lanternas)
+                  float lightFactor = Math.max(col.skyLight * dayFactor, col.blockLight * 0.85f);
+                  lightFactor = Mth.clamp(lightFactor, 0.08f, 1.0f);
+
+                  // Mistura cor do corpo da agua com reflexo do ceu pelo Fresnel
+                  float reflStrength = fresnel * col.skyLight * 0.88f;
+                  float r = Mth.lerp(reflStrength, bodyR * lightFactor, skyR);
+                  float g = Mth.lerp(reflStrength, bodyG * lightFactor, skyG);
+                  float b = Mth.lerp(reflStrength, bodyB * lightFactor, skyB);
+
+                  // Luz quente de tochas proximas
+                  if (col.blockLight > 0.15f) {
+                      float torch = col.blockLight * 0.22f;
+                      r += torch * 1.0f;
+                      g += torch * 0.72f;
+                      b += torch * 0.35f;
+                  }
+
+                  // Brilho especular Blinn-Phong do Sol / Lua na inclinacao das ondas!
+                  float hx = lx + vx;
+                  float hy = ly + vy;
+                  float hz = lz + vz;
+                  float hLen = (float) Math.sqrt(hx * hx + hy * hy + hz * hz);
+                  float specular = 0.0f;
+                  if (hLen > 0.001f && col.skyLight > 0.2f) {
+                      float nDotH = Math.max(0.0f, (nx * hx + ny * hy + nz * hz) / hLen);
+                      float sharp = (float) Math.pow(nDotH, 46.0) * 1.35f;
+                      float broad = (float) Math.pow(nDotH, 9.0) * 0.26f;
+                      specular = (sharp + broad) * specMult * col.skyLight;
+                      r += specular * specR;
+                      g += specular * specG;
+                      b += specular * specB;
+                  }
+
+                  // Espuma branca nas cristas das ondas e no rastro do jogador
+                  float simFoam = WaterSimulation.getFoam(gx, gz, partialTick);
+                  float crestFoam = Mth.clamp((hC - 0.068f) * 5.2f, 0.0f, 0.85f);
+                  float totalFoam = Mth.clamp(simFoam + crestFoam, 0.0f, 1.0f);
+
+                  float foamLight = Mth.clamp(lightFactor * 1.15f, 0.25f, 1.0f);
+                  r = Mth.lerp(totalFoam, r, 0.94f * foamLight);
+                  g = Mth.lerp(totalFoam, g, 0.98f * foamLight);
+                  b = Mth.lerp(totalFoam, b, 1.00f * foamLight);
+
+                  // Transparencia realista: raso + olhando de cima = cristalino; fundo/inclinado/espuma = mais opaco
+                  float baseAlpha = Mth.lerp(depthT, 0.24f, 0.72f);
+                  float alpha = Mth.clamp(baseAlpha + fresnel * 0.42f + totalFoam * 0.55f + specular * 0.45f, 0.16f, 0.93f);
+
+                  // Fade suave na borda do raio de renderizacao para emendar invisivelmente com a agua distante
+                  float dist = (float) Math.sqrt(distSqXZ);
+                  float edgeFade = Mth.clamp((14.2f - dist) / 3.2f, 0.0f, 1.0f);
+                  alpha *= edgeFade;
+
+                  buffer.vertex(matrix, wx, wy, wz)
+                          .color(Mth.clamp(r, 0.0f, 1.0f), Mth.clamp(g, 0.0f, 1.0f), Mth.clamp(b, 0.0f, 1.0f), alpha)
+                          .endVertex();
+              }
+
+              private static void renderShoreFoam(
+                      BufferBuilder buffer,
+                      Matrix4f matrix,
+                      WaterSimulation.WaterColumn col,
+                      int baseGX, int baseGZ,
+                      Vec3 camPos,
+                      float time,
+                      float partialTick,
+                      float dayFactor
+              ) {
+                  float dx = (col.worldX + 0.5f) - (float) camPos.x;
+                  float dz = (col.worldZ + 0.5f) - (float) camPos.z;
+                  float dist = (float) Math.sqrt(dx * dx + dz * dz);
+                  float edgeFade = Mth.clamp((13.5f - dist) / 2.8f, 0.0f, 1.0f);
+                  if (edgeFade <= 0.02f) return;
+
+                  float centerH = sampleTotalHeight(baseGX + 1, baseGZ + 1, col.openness, time, partialTick);
+                  float wavePush = 0.17f + 0.08f * (float) Math.sin(time * 1.45f + col.worldX * 0.7f + col.worldZ * 0.7f) + Math.max(0.0f, centerH * 1.2f);
+                  float y = col.surfaceY + 0.068f + Math.max(0.0f, centerH * 0.65f);
+
+                  float light = Mth.clamp(Math.max(col.skyLight * dayFactor, col.blockLight) * 1.1f, 0.25f, 1.0f);
+                  float alpha = (0.48f + 0.18f * (float) Math.sin(time * 2.0f + col.worldX + col.worldZ)) * edgeFade;
+
+                  float x0 = col.worldX;
+                  float x1 = col.worldX + 1.0f;
+                  float z0 = col.worldZ;
+                  float z1 = col.worldZ + 1.0f;
+
+                  if ((col.shoreMask & 1) != 0) {
+                      drawShoreQuad(buffer, matrix, x0, z0, x1, z0, x1, z0 + wavePush, x0, z0 + wavePush, y, light, alpha);
+                  }
+                  if ((col.shoreMask & 2) != 0) {
+                      drawShoreQuad(buffer, matrix, x0, z1, x1, z1, x1, z1 - wavePush, x0, z1 - wavePush, y, light, alpha);
+                  }
+                  if ((col.shoreMask & 4) != 0) {
+                      drawShoreQuad(buffer, matrix, x1, z0, x1, z1, x1 - wavePush, z1, x1 - wavePush, z0, y, light, alpha);
+                  }
+                  if ((col.shoreMask & 8) != 0) {
+                      drawShoreQuad(buffer, matrix, x0, z0, x0, z1, x0 + wavePush, z1, x0 + wavePush, z0, y, light, alpha);
                   }
               }
 
-              private static void emitWaterVertex(
-                      BufferBuilder buffer,
-                      Matrix4f matrix,
-                      float x,
-                      float y,
-                      float z,
-                      float height,
-                      float shimmerR,
-                      float shimmerG,
-                      float shimmerB,
-                      float shimmerStrength
+              private static void drawShoreQuad(
+                      BufferBuilder buffer, Matrix4f matrix,
+                      float ax, float az, float bx, float bz,
+                      float cx, float cz, float dx, float dz,
+                      float y, float light, float alpha
               ) {
-                  float crest = Mth.clamp((height + 0.02f) * 8.5f, 0.0f, 1.0f);
-                  float r = Mth.lerp(crest, 0.08f, shimmerR);
-                  float g = Mth.lerp(crest, 0.28f, shimmerG);
-                  float b = Mth.lerp(crest, 0.52f, shimmerB);
-                  float a = Mth.lerp(crest, 0.07f, 0.26f * shimmerStrength + 0.08f);
-
-                  buffer.vertex(matrix, x, y, z).color(r, g, b, a).endVertex();
-              }
-
-              private static void drawFoamStrip(
-                      BufferBuilder buffer,
-                      Matrix4f matrix,
-                      float ax, float az,
-                      float bx, float bz,
-                      float cx, float cz,
-                      float dx, float dz,
-                      float y,
-                      float alpha
-              ) {
-                  buffer.vertex(matrix, ax, y + 0.01f, az).color(0.92f, 0.97f, 1.0f, alpha).endVertex();
-                  buffer.vertex(matrix, bx, y + 0.01f, bz).color(0.92f, 0.97f, 1.0f, alpha).endVertex();
-                  buffer.vertex(matrix, cx, y, cz).color(0.82f, 0.94f, 1.0f, 0.0f).endVertex();
-                  buffer.vertex(matrix, dx, y, dz).color(0.82f, 0.94f, 1.0f, 0.0f).endVertex();
-              }
-
-              private static void renderDynamicWave(
-                      BufferBuilder buffer,
-                      Matrix4f matrix,
-                      ClientLevel level,
-                      WaterWaveManager.Wave wave,
-                      float partialTick
-              ) {
-                  float progress = wave.getProgress(partialTick);
-                  float fadeIn = Mth.clamp((wave.age + partialTick) / 3.0f, 0.0f, 1.0f);
-                  float fadeOut = (1.0f - progress) * (1.0f - progress);
-                  float alpha = fadeIn * fadeOut * (wave.foamRing ? 0.62f : 0.35f) * Mth.clamp(wave.strength, 0.25f, 1.3f);
-
-                  if (alpha <= 0.01f) {
-                      return;
-                  }
-
-                  float radius = wave.getInterpolatedRadius(partialTick);
-                  float halfWidth = (wave.foamRing ? 0.16f : 0.08f) * (1.0f + progress * 0.8f);
-                  float innerR = Math.max(0.02f, radius - halfWidth);
-                  float outerR = radius + halfWidth;
-
-                  float baseY = (float) wave.y + 0.055f;
-                  float crestHeight = (wave.foamRing ? 0.095f : 0.025f) * wave.strength * fadeOut;
-
-                  float crestR = wave.foamRing ? 0.94f : 0.78f;
-                  float crestG = wave.foamRing ? 0.98f : 0.93f;
-                  float crestB = 1.0f;
-
-                  for (int s = 0; s < RING_SEGMENTS; s++) {
-                      double a0 = (s / (double) RING_SEGMENTS) * Math.PI * 2.0;
-                      double a1 = ((s + 1) / (double) RING_SEGMENTS) * Math.PI * 2.0;
-
-                      float cos0 = (float) Math.cos(a0);
-                      float sin0 = (float) Math.sin(a0);
-                      float cos1 = (float) Math.cos(a1);
-                      float sin1 = (float) Math.sin(a1);
-
-                      double midX = wave.x + ((cos0 + cos1) * 0.5) * radius;
-                      double midZ = wave.z + ((sin0 + sin1) * 0.5) * radius;
-
-                      if (!WaterWaveManager.isWaterAt(level, midX, wave.y, midZ)) {
-                          continue;
-                      }
-
-                      float inX0 = (float) wave.x + cos0 * innerR;
-                      float inZ0 = (float) wave.z + sin0 * innerR;
-                      float inX1 = (float) wave.x + cos1 * innerR;
-                      float inZ1 = (float) wave.z + sin1 * innerR;
-
-                      float midX0 = (float) wave.x + cos0 * radius;
-                      float midZ0 = (float) wave.z + sin0 * radius;
-                      float midX1 = (float) wave.x + cos1 * radius;
-                      float midZ1 = (float) wave.z + sin1 * radius;
-
-                      float outX0 = (float) wave.x + cos0 * outerR;
-                      float outZ0 = (float) wave.z + sin0 * outerR;
-                      float outX1 = (float) wave.x + cos1 * outerR;
-                      float outZ1 = (float) wave.z + sin1 * outerR;
-
-                      buffer.vertex(matrix, inX0, baseY, inZ0).color(0.45f, 0.80f, 0.98f, 0.0f).endVertex();
-                      buffer.vertex(matrix, inX1, baseY, inZ1).color(0.45f, 0.80f, 0.98f, 0.0f).endVertex();
-                      buffer.vertex(matrix, midX1, baseY + crestHeight, midZ1).color(crestR, crestG, crestB, alpha).endVertex();
-                      buffer.vertex(matrix, midX0, baseY + crestHeight, midZ0).color(crestR, crestG, crestB, alpha).endVertex();
-
-                      buffer.vertex(matrix, midX0, baseY + crestHeight, midZ0).color(crestR, crestG, crestB, alpha).endVertex();
-                      buffer.vertex(matrix, midX1, baseY + crestHeight, midZ1).color(crestR, crestG, crestB, alpha).endVertex();
-                      buffer.vertex(matrix, outX1, baseY, outZ1).color(0.50f, 0.85f, 1.0f, 0.0f).endVertex();
-                      buffer.vertex(matrix, outX0, baseY, outZ0).color(0.50f, 0.85f, 1.0f, 0.0f).endVertex();
-                  }
-              }
-
-              private static float getAmbientWaveHeight(double wx, double wz, float time) {
-                  double w1 = Math.sin(wx * 0.65 + time * 1.15) * 0.017;
-                  double w2 = Math.cos(wz * 0.75 + time * 0.95) * 0.014;
-                  double w3 = Math.sin((wx + wz) * 0.45 - time * 1.4) * 0.011;
-                  return (float) (w1 + w2 + w3);
+                  buffer.vertex(matrix, ax, y + 0.015f, az).color(0.92f * light, 0.97f * light, 1.0f * light, alpha).endVertex();
+                  buffer.vertex(matrix, bx, y + 0.015f, bz).color(0.92f * light, 0.97f * light, 1.0f * light, alpha).endVertex();
+                  buffer.vertex(matrix, cx, y, cz).color(0.78f * light, 0.94f * light, 1.0f * light, 0.0f).endVertex();
+                  buffer.vertex(matrix, dx, y, dz).color(0.78f * light, 0.94f * light, 1.0f * light, 0.0f).endVertex();
               }
           }
           END_RENDERER
@@ -873,11 +1343,11 @@ jobs:
         with:
           gradle-version: '8.1.1'
 
-      - name: Compilar Mod
+      - name: Compilar Mod v2.0
         run: gradle build
 
       - name: Salvar Mod Pronto (.jar)
         uses: actions/upload-artifact@v4
         with:
-          name: AguaRealista-1.20.1-Forge
+          name: AguaRealista-v2-1.20.1-Forge
           path: build/libs/*.jar
